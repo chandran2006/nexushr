@@ -1,0 +1,150 @@
+# ============================================================
+# NexusHR - Application Configuration
+# ============================================================
+
+spring:
+  application:
+    name: nexushr-backend
+
+  profiles:
+    active: dev
+
+  # Database
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/nexushr}
+    username: ${DB_USERNAME:nexushr}
+    password: ${DB_PASSWORD:nexushr123}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  # JPA
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+        default_schema: public
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+
+  # Flyway
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    validate-on-migrate: true
+
+  # Redis
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+  # Cache
+  cache:
+    type: redis
+    redis:
+      time-to-live: 3600000
+
+  # Mail
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:noreply@nexushr.com}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+  # File Upload
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+# Server
+server:
+  port: ${PORT:8080}
+  servlet:
+    context-path: /api
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/plain
+  error:
+    include-message: always
+    include-binding-errors: always
+
+# JWT
+jwt:
+  secret: ${JWT_SECRET:nexushr-super-secret-jwt-key-2024-enterprise-grade-security-key-minimum-256-bits}
+  expiration: ${JWT_EXPIRATION:86400000}
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}
+
+# OpenAI
+openai:
+  api-key: ${OPENAI_API_KEY:}
+  model: ${OPENAI_MODEL:gpt-4o-mini}
+  max-tokens: 1000
+  temperature: 0.7
+
+# OpenAPI / Swagger
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+  info:
+    title: NexusHR API
+    description: AI-Enabled Enterprise HR & Workforce Intelligence Platform
+    version: 1.0.0
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+
+# Logging
+logging:
+  level:
+    com.nexushr: DEBUG
+    org.springframework.security: INFO
+    org.hibernate.SQL: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/nexushr.log
+
+# App Config
+app:
+  frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  upload-dir: ${UPLOAD_DIR:uploads}
+  max-login-attempts: 5
+  lockout-duration-minutes: 30
