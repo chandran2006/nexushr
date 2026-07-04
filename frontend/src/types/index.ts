@@ -11,7 +11,7 @@ export interface User {
   lastLoginAt?: string
 }
 
-export type UserRole = 'SUPER_ADMIN' | 'HR_ADMIN' | 'HR_MANAGER' | 'EMPLOYEE' | 'FINANCE' | 'EXECUTIVE'
+export type UserRole = 'SUPER_ADMIN' | 'HR_ADMIN' | 'HR_MANAGER' | 'MANAGER' | 'EMPLOYEE' | 'FINANCE' | 'EXECUTIVE' | 'RECRUITER'
 export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'PENDING'
 
 export interface AuthResponse {
@@ -149,8 +149,8 @@ export interface DashboardData {
     attendanceRate: number
   }
   payrollStats: {
-    totalPayrollThisMonth: number
-    totalPayrollLastMonth: number
+    totalPayrollThisMonth: number | string
+    totalPayrollLastMonth: number | string
     payrollGrowth: number
     pendingPayrolls: number
   }

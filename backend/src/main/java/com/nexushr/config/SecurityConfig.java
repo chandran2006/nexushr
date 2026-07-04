@@ -40,7 +40,10 @@ public class SecurityConfig {
     private String frontendUrl;
 
     private static final String[] PUBLIC_ENDPOINTS = {
-        "/auth/**",
+        "/auth/login",
+        "/auth/register",
+        "/auth/refresh",
+        "/auth/logout",
         "/v3/api-docs/**",
         "/swagger-ui/**",
         "/swagger-ui.html",

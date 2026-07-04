@@ -1,6 +1,7 @@
 # ============================================================
-# NexusHR - Local Development Profile (H2 in-memory, no Redis/PostgreSQL)
+# NexusHR - Local Development Profile
 # Run: mvn spring-boot:run -Dspring-boot.run.profiles=dev
+# Or:  set PORT=8082 && mvn spring-boot:run -Dspring-boot.run.profiles=dev
 # ============================================================
 
 spring:
@@ -28,12 +29,6 @@ spring:
       - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
       - org.springframework.boot.actuate.autoconfigure.data.redis.RedisHealthContributorAutoConfiguration
 
-server:
-  port: 8081
-
-app:
-  frontend-url: http://localhost:5173
-
   mail:
     host: localhost
     port: 1025
@@ -45,6 +40,12 @@ app:
           auth: false
           starttls:
             enable: false
+
+server:
+  port: ${PORT:8081}
+
+app:
+  frontend-url: http://localhost:5173
 
 management:
   health:

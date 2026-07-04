@@ -28,8 +28,9 @@ export default function DashboardPage() {
   })
 
   if (isLoading) return <DashboardSkeleton />
+  if (!data) return <DashboardSkeleton />
 
-  const d = data!
+  const d = data
 
   return (
     <div className="space-y-6">
@@ -66,7 +67,7 @@ export default function DashboardPage() {
         />
         <StatCard
           title="Monthly Payroll"
-          value={formatCurrency(d.payrollStats.totalPayrollThisMonth)}
+          value={formatCurrency(Number(d.payrollStats.totalPayrollThisMonth))}
           change={`${d.payrollStats.payrollGrowth >= 0 ? '+' : ''}${d.payrollStats.payrollGrowth}%`}
           changeType={d.payrollStats.payrollGrowth >= 0 ? 'up' : 'down'}
           icon={<DollarSign className="w-5 h-5" />}

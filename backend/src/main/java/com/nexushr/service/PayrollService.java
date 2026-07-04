@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -18,6 +19,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 @RequiredArgsConstructor
@@ -29,10 +31,11 @@ public class PayrollService {
     private final NotificationService notificationService;
     private final AuditService auditService;
 
-    private static final BigDecimal TAX_RATE = new BigDecimal("0.15");
-    private static final BigDecimal INSURANCE_RATE = new BigDecimal("0.05");
-    private static final BigDecimal HOUSING_ALLOWANCE_RATE = new BigDecimal("0.20");
-    private static final BigDecimal TRANSPORT_ALLOWANCE_RATE = new BigDecimal("0.10");
+    private static final BigDecimal TAX_RATE              = new BigDecimal("0.15");
+    private static final BigDecimal INSURANCE_RATE        = new BigDecimal("0.05");
+    private static final BigDecimal HOUSING_ALLOWANCE_PCT = new BigDecimal("0.20");
+    private static final BigDecimal TRANSPORT_ALLOWANCE_PCT = new BigDecimal("0.10");
+    private static final BigDecimal MEDICAL_ALLOWANCE_PCT = new BigDecimal("0.05");
 
     @Transactional
     public Payroll processPayroll(UUID employeeId, LocalDate periodStart, LocalDate periodEnd) {
@@ -42,13 +45,16 @@ public class PayrollService {
         payrollRepository.findByEmployeeIdAndPayPeriodStartAndPayPeriodEnd(employeeId, periodStart, periodEnd)
                 .ifPresent(p -> { throw new DuplicateResourceException("Payroll already processed for this period"); });
 
-        BigDecimal basicSalary = employee.getBaseSalary() != null ? employee.getBaseSalary() : BigDecimal.ZERO;
-        BigDecimal housingAllowance = basicSalary.multiply(HOUSING_ALLOWANCE_RATE).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal transportAllowance = basicSalary.multiply(TRANSPORT_ALLOWANCE_RATE).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal grossSalary = basicSalary.add(housingAllowance).add(transportAllowance);
-        BigDecimal taxDeduction = grossSalary.multiply(TAX_RATE).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal insuranceDeduction = basicSalary.multiply(INSURANCE_RATE).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal netSalary = grossSalary.subtract(taxDeduction).subtract(insuranceDeduction);
+        BigDecimal basicSalary = employee.getBaseSalary() != null
+                ? employee.getBaseSalary() : BigDecimal.ZERO;
+
+        BigDecimal housingAllowance    = pct(basicSalary, HOUSING_ALLOWANCE_PCT);
+        BigDecimal transportAllowance  = pct(basicSalary, TRANSPORT_ALLOWANCE_PCT);
+        BigDecimal medicalAllowance    = pct(basicSalary, MEDICAL_ALLOWANCE_PCT);
+        BigDecimal grossSalary         = basicSalary.add(housingAllowance).add(transportAllowance).add(medicalAllowance);
+        BigDecimal taxDeduction        = pct(grossSalary, TAX_RATE);
+        BigDecimal insuranceDeduction  = pct(basicSalary, INSURANCE_RATE);
+        BigDecimal netSalary           = grossSalary.subtract(taxDeduction).subtract(insuranceDeduction);
 
         Payroll payroll = Payroll.builder()
                 .employee(employee)
@@ -57,6 +63,7 @@ public class PayrollService {
                 .basicSalary(basicSalary)
                 .housingAllowance(housingAllowance)
                 .transportAllowance(transportAllowance)
+                .medicalAllowance(medicalAllowance)
                 .grossSalary(grossSalary)
                 .taxDeduction(taxDeduction)
                 .insuranceDeduction(insuranceDeduction)
@@ -66,24 +73,29 @@ public class PayrollService {
                 .build();
 
         payroll = payrollRepository.save(payroll);
-        log.info("Payroll processed for employee: {}", employee.getEmployeeId());
+        log.info("Payroll processed for employee: {} period: {}-{}", employee.getEmployeeId(), periodStart, periodEnd);
         return payroll;
     }
 
     @Transactional
     public Payroll approvePayroll(UUID payrollId) {
-        Payroll payroll = payrollRepository.findById(payrollId)
-                .orElseThrow(() -> new ResourceNotFoundException("Payroll", "id", payrollId));
+        Payroll payroll = getPayrollById(payrollId);
+        if (payroll.getStatus() != Payroll.PayrollStatus.DRAFT) {
+            throw new IllegalStateException("Only DRAFT payrolls can be approved");
+        }
         payroll.setStatus(Payroll.PayrollStatus.APPROVED);
         payroll = payrollRepository.save(payroll);
-        auditService.log("PAYROLL_APPROVED", "Payroll", payrollId.toString(), null, null, "Payroll approved");
+        auditService.log("PAYROLL_APPROVED", "Payroll", payrollId.toString(),
+                Payroll.PayrollStatus.DRAFT.name(), Payroll.PayrollStatus.APPROVED.name(), "Payroll approved");
         return payroll;
     }
 
     @Transactional
     public Payroll markAsPaid(UUID payrollId) {
-        Payroll payroll = payrollRepository.findById(payrollId)
-                .orElseThrow(() -> new ResourceNotFoundException("Payroll", "id", payrollId));
+        Payroll payroll = getPayrollById(payrollId);
+        if (payroll.getStatus() != Payroll.PayrollStatus.APPROVED) {
+            throw new IllegalStateException("Only APPROVED payrolls can be marked as paid");
+        }
         payroll.setStatus(Payroll.PayrollStatus.PAID);
         payroll.setPaymentDate(LocalDate.now());
         payroll = payrollRepository.save(payroll);
@@ -94,21 +106,45 @@ public class PayrollService {
                 "Your payslip for " + payroll.getPayPeriodStart() + " to " + payroll.getPayPeriodEnd() + " is ready",
                 payroll.getId()
         );
+        auditService.log("PAYROLL_PAID", "Payroll", payrollId.toString(),
+                Payroll.PayrollStatus.APPROVED.name(), Payroll.PayrollStatus.PAID.name(), "Payroll marked as paid");
         return payroll;
     }
 
-    @Transactional
+    /**
+     * Bulk payroll: each employee processed in its own transaction so one failure
+     * does not roll back the entire batch.
+     */
     public void processBulkPayroll(LocalDate periodStart, LocalDate periodEnd) {
-        List<Employee> activeEmployees = employeeRepository.findAllByStatusAndDeletedFalse(
-                Employee.EmployeeStatus.ACTIVE);
+        List<Employee> activeEmployees = employeeRepository
+                .findAllByStatusAndDeletedFalse(Employee.EmployeeStatus.ACTIVE);
+
+        AtomicInteger processed = new AtomicInteger(0);
+        AtomicInteger skipped   = new AtomicInteger(0);
+        AtomicInteger failed    = new AtomicInteger(0);
 
         activeEmployees.forEach(emp -> {
             try {
-                processPayroll(emp.getId(), periodStart, periodEnd);
+                processSinglePayrollInNewTx(emp.getId(), periodStart, periodEnd);
+                processed.incrementAndGet();
             } catch (DuplicateResourceException e) {
-                log.warn("Payroll already exists for employee: {}", emp.getEmployeeId());
+                skipped.incrementAndGet();
+                log.debug("Payroll already exists for: {}", emp.getEmployeeId());
+            } catch (Exception e) {
+                failed.incrementAndGet();
+                log.error("Payroll failed for employee {}: {}", emp.getEmployeeId(), e.getMessage());
             }
         });
+
+        log.info("Bulk payroll complete — processed: {}, skipped: {}, failed: {}",
+                processed.get(), skipped.get(), failed.get());
+        auditService.log("BULK_PAYROLL", "Payroll", periodStart + "_" + periodEnd,
+                null, "processed=" + processed.get(), "Bulk payroll run completed");
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void processSinglePayrollInNewTx(UUID employeeId, LocalDate periodStart, LocalDate periodEnd) {
+        processPayroll(employeeId, periodStart, periodEnd);
     }
 
     @Transactional(readOnly = true)
@@ -118,8 +154,17 @@ public class PayrollService {
 
     @Transactional(readOnly = true)
     public Page<Payroll> getMyPayrolls(UUID userId, int page, int size) {
-        var employee = employeeRepository.findByUserIdAndDeletedFalse(userId)
-                .orElseThrow(() -> new com.nexushr.exception.ResourceNotFoundException("Employee profile not found"));
+        Employee employee = employeeRepository.findByUserIdAndDeletedFalse(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Employee profile not found"));
         return payrollRepository.findByEmployeeIdOrderByPayPeriodStartDesc(employee.getId(), PageRequest.of(page, size));
+    }
+
+    private Payroll getPayrollById(UUID id) {
+        return payrollRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Payroll", "id", id));
+    }
+
+    private BigDecimal pct(BigDecimal base, BigDecimal rate) {
+        return base.multiply(rate).setScale(2, RoundingMode.HALF_UP);
     }
 }

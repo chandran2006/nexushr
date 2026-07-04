@@ -9,6 +9,17 @@ import { Button, Input } from '@/components/ui'
 import api from '@/lib/api'
 import type { ApiResponse, AuthResponse } from '@/types'
 
+const DEMO_USERS = [
+  { role: 'Super Admin',  email: 'admin@nexushr.com',       color: 'from-red-500 to-rose-600' },
+  { role: 'HR Admin',     email: 'hradmin@nexushr.com',     color: 'from-blue-500 to-blue-600' },
+  { role: 'HR Manager',   email: 'hrmanager@nexushr.com',   color: 'from-violet-500 to-violet-600' },
+  { role: 'Manager',      email: 'manager@nexushr.com',     color: 'from-cyan-500 to-cyan-600' },
+  { role: 'Employee',     email: 'employee@nexushr.com',    color: 'from-emerald-500 to-emerald-600' },
+  { role: 'Finance',      email: 'finance@nexushr.com',     color: 'from-amber-500 to-amber-600' },
+  { role: 'Executive',    email: 'executive@nexushr.com',   color: 'from-sky-500 to-blue-600' },
+  { role: 'Recruiter',    email: 'recruiter@nexushr.com',   color: 'from-indigo-500 to-indigo-600' },
+]
+
 export default function LoginPage() {
   const navigate = useNavigate()
   const { setAuth } = useAuthStore()
@@ -27,6 +38,12 @@ export default function LoginPage() {
       toast.error(err.response?.data?.message || 'Invalid credentials')
     },
   })
+
+  const fillDemo = (email: string) => {
+    const newForm = { email, password: 'Demo@1234' }
+    setForm(newForm)
+    setTimeout(() => login(newForm), 50)
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 flex">
@@ -82,12 +99,12 @@ export default function LoginPage() {
       </div>
 
       {/* Right Panel */}
-      <div className="flex-1 flex items-center justify-center p-8">
+      <div className="flex-1 flex items-center justify-center p-6 overflow-y-auto">
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.5 }}
-          className="w-full max-w-md"
+          className="w-full max-w-md py-6"
         >
           <div className="lg:hidden flex items-center gap-2 mb-8">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center">
@@ -96,7 +113,7 @@ export default function LoginPage() {
             <span className="text-xl font-bold text-white">NexusHR</span>
           </div>
 
-          <div className="mb-8">
+          <div className="mb-6">
             <h2 className="text-3xl font-bold text-white mb-2">Welcome back</h2>
             <p className="text-slate-400">Sign in to your account to continue</p>
           </div>
@@ -130,34 +147,41 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-500" />
-                <span className="text-sm text-slate-400">Remember me</span>
-              </label>
-              <Link to="/forgot-password" className="text-sm text-blue-400 hover:text-blue-300 transition-colors">
-                Forgot password?
-              </Link>
-            </div>
-
             <Button type="submit" loading={isPending} className="w-full py-3" size="lg">
-              Sign in
-              <ArrowRight className="w-4 h-4" />
+              Sign in <ArrowRight className="w-4 h-4" />
             </Button>
           </form>
 
-          <p className="text-center text-sm text-slate-500 mt-6">
+          {/* Demo Credentials */}
+          <div className="mt-6 p-4 bg-slate-800/50 border border-slate-700/50 rounded-xl">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Demo Accounts</p>
+              <span className="text-xs text-slate-500">Password: <span className="text-slate-300 font-mono">Demo@1234</span></span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {DEMO_USERS.map(({ role, email, color }) => (
+                <button
+                  key={email}
+                  onClick={() => fillDemo(email)}
+                  className="flex items-center gap-2 p-2.5 rounded-lg bg-slate-900/60 border border-slate-700/40 hover:border-slate-600 transition-all group text-left"
+                >
+                  <div className={`w-2 h-2 rounded-full bg-gradient-to-br ${color} flex-shrink-0`} />
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-slate-300 group-hover:text-white transition-colors truncate">{role}</p>
+                    <p className="text-xs text-slate-500 truncate">{email.split('@')[0]}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-slate-600 mt-2 text-center">Click any role to instantly sign in</p>
+          </div>
+
+          <p className="text-center text-sm text-slate-500 mt-4">
             Don't have an account?{' '}
             <Link to="/register" className="text-blue-400 hover:text-blue-300 font-medium transition-colors">
               Create account
             </Link>
           </p>
-
-          <div className="mt-8 p-4 bg-slate-800/40 border border-slate-700/30 rounded-xl">
-            <p className="text-xs text-slate-500 mb-2 font-medium">Demo credentials:</p>
-            <p className="text-xs text-slate-400">Email: <span className="text-slate-300">admin@nexushr.com</span></p>
-            <p className="text-xs text-slate-400">Password: <span className="text-slate-300">Admin@123</span></p>
-          </div>
         </motion.div>
       </div>
     </div>

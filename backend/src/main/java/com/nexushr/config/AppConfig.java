@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -22,29 +23,44 @@ import java.util.concurrent.Executor;
 @EnableJpaAuditing(auditorAwareRef = "auditorProvider")
 public class AppConfig {
 
+    /**
+     * RestTemplate with explicit connect/read timeouts.
+     * Bare RestTemplate has no timeout — hangs indefinitely on slow external APIs.
+     */
     @Bean
     public RestTemplate restTemplate() {
-        return new RestTemplate();
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(5_000);   // 5s connect timeout
+        factory.setReadTimeout(30_000);     // 30s read timeout (OpenAI can be slow)
+        return new RestTemplate(factory);
     }
 
     @Bean
     public AuditorAware<String> auditorProvider() {
         return () -> {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
+            if (auth != null && auth.isAuthenticated()
+                    && !"anonymousUser".equals(auth.getPrincipal())) {
                 return Optional.of(auth.getName());
             }
             return Optional.of("system");
         };
     }
 
+    /**
+     * Async task executor for @Async methods (notifications, audit logs).
+     * Sized for I/O-bound tasks: high thread count, bounded queue.
+     */
     @Bean(name = "taskExecutor")
     public Executor taskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(5);
-        executor.setMaxPoolSize(20);
-        executor.setQueueCapacity(100);
+        executor.setCorePoolSize(4);
+        executor.setMaxPoolSize(16);
+        executor.setQueueCapacity(200);
         executor.setThreadNamePrefix("nexushr-async-");
+        executor.setKeepAliveSeconds(60);
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(30);
         executor.initialize();
         return executor;
     }

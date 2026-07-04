@@ -28,11 +28,11 @@ export default function EmployeesPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/employees/${id}`),
-    onSuccess: () => { toast.success('Employee deleted'); qc.invalidateQueries({ queryKey: ['employees'] }) },
+    onSuccess: () => { toast.success('Employee deleted'); qc.invalidateQueries({ queryKey: ['employees'] } as any) },
     onError: () => toast.error('Failed to delete employee'),
   })
 
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const handleSearch = useCallback((val: string) => {
     setSearch(val)

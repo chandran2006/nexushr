@@ -1,0 +1,46 @@
+# Maven build output
+target/
+*.class
+*.jar
+*.war
+*.ear
+
+# Logs
+logs/
+*.log
+*.log.*.gz
+*.log.*.zip
+
+# Spring Boot
+application-local.yml
+application-prod.yml
+
+# Node / Frontend
+node_modules/
+frontend/dist/
+frontend/.env
+frontend/tsconfig.tsbuildinfo
+
+# Environment / Secrets
+.env
+.env.local
+.env.production
+*.env
+
+# SQL seed scripts (contain credentials)
+backend/seed_demo_users.sql
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes
+postgres_data/
+redis_data/

@@ -1,20 +1,30 @@
 package com.nexushr.service;
 
 import com.nexushr.dto.response.DashboardResponse;
+import com.nexushr.entity.Employee;
+import com.nexushr.entity.JobPosting;
+import com.nexushr.entity.LeaveRequest;
+import com.nexushr.entity.Candidate;
+import com.nexushr.entity.Payroll;
 import com.nexushr.repository.*;
-import com.nexushr.entity.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.format.TextStyle;
 import java.util.*;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class DashboardService {
 
     private final EmployeeRepository employeeRepository;
@@ -33,61 +43,99 @@ public class DashboardService {
         LocalDate lastMonthStart = monthStart.minusMonths(1);
         LocalDate lastMonthEnd = monthStart.minusDays(1);
 
+        // Employee stats
         long totalEmployees = employeeRepository.countByDeletedFalse();
         long activeEmployees = employeeRepository.countByStatusAndDeletedFalse(Employee.EmployeeStatus.ACTIVE);
+        long newHiresThisMonth = employeeRepository.countByHireDateBetweenAndDeletedFalse(monthStart, today);
+        long terminationsThisMonth = employeeRepository.countByTerminationDateBetweenAndDeletedFalse(monthStart, today);
+        double attritionRate = totalEmployees > 0
+                ? BigDecimal.valueOf((double) terminationsThisMonth / totalEmployees * 100)
+                        .setScale(1, RoundingMode.HALF_UP).doubleValue()
+                : 0.0;
 
+        // Attendance stats
         long presentToday = attendanceRepository.countPresentByDate(today);
         long absentToday = attendanceRepository.countAbsentByDate(today);
         long lateToday = attendanceRepository.countLateByDate(today);
-        double attendanceRate = totalEmployees > 0 ? (double) presentToday / totalEmployees * 100 : 0;
+        long onLeaveToday = attendanceRepository.countOnLeaveByDate(today);
+        double attendanceRate = totalEmployees > 0
+                ? BigDecimal.valueOf((double) presentToday / totalEmployees * 100)
+                        .setScale(1, RoundingMode.HALF_UP).doubleValue()
+                : 0.0;
 
-        BigDecimal payrollThisMonth = payrollRepository.getTotalPayrollForPeriod(monthStart, today);
-        BigDecimal payrollLastMonth = payrollRepository.getTotalPayrollForPeriod(lastMonthStart, lastMonthEnd);
-        if (payrollThisMonth == null) payrollThisMonth = BigDecimal.ZERO;
-        if (payrollLastMonth == null) payrollLastMonth = BigDecimal.ZERO;
+        // Payroll stats
+        BigDecimal payrollThisMonth = Optional.ofNullable(
+                payrollRepository.getTotalPayrollForPeriod(monthStart, today)).orElse(BigDecimal.ZERO);
+        BigDecimal payrollLastMonth = Optional.ofNullable(
+                payrollRepository.getTotalPayrollForPeriod(lastMonthStart, lastMonthEnd)).orElse(BigDecimal.ZERO);
+        long pendingPayrolls = payrollRepository.countByStatus(Payroll.PayrollStatus.DRAFT);
 
+        double payrollGrowth = 0.0;
+        if (payrollLastMonth.compareTo(BigDecimal.ZERO) > 0) {
+            payrollGrowth = payrollThisMonth.subtract(payrollLastMonth)
+                    .divide(payrollLastMonth, 4, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100))
+                    .setScale(1, RoundingMode.HALF_UP)
+                    .doubleValue();
+        }
+
+        // Leave stats
         long pendingLeaves = leaveRequestRepository.countByStatusAndDeletedFalse(LeaveRequest.LeaveStatus.PENDING);
+        long approvedThisMonth = leaveRequestRepository.countByStatusAndApprovedAtBetween(
+                LeaveRequest.LeaveStatus.APPROVED, monthStart.atStartOfDay(), today.atTime(23, 59, 59));
+        long rejectedThisMonth = leaveRequestRepository.countByStatusAndApprovedAtBetween(
+                LeaveRequest.LeaveStatus.REJECTED, monthStart.atStartOfDay(), today.atTime(23, 59, 59));
+
+        // Recruitment stats
         long openPositions = jobPostingRepository.countByStatusAndDeletedFalse(JobPosting.JobStatus.PUBLISHED);
-        long totalCandidates = candidateRepository.countByStatus(Candidate.CandidateStatus.APPLIED);
+        long totalCandidates = candidateRepository.countActiveByStatus(Candidate.CandidateStatus.APPLIED);
+        long interviewsScheduled = candidateRepository.countActiveByStatus(Candidate.CandidateStatus.INTERVIEW_SCHEDULED);
+        long hiredThisMonth = candidateRepository.countHiredThisMonth(monthStart.atStartOfDay());
 
-        List<Map<String, Object>> deptDistribution = buildDepartmentDistribution();
-        List<Map<String, Object>> headcountTrend = buildHeadcountTrend();
+        // Charts
+        List<Map<String, Object>> deptDistribution = employeeRepository.getDepartmentDistribution();
+        List<Map<String, Object>> headcountTrend = buildHeadcountTrend(today);
 
-        var recentHires = employeeRepository.findByDeletedFalse(PageRequest.of(0, 5))
-                .getContent().stream().map(employeeService::mapToResponse).toList();
+        // Recent hires — sorted by hire date desc
+        var recentHires = employeeRepository
+                .findRecentHires(PageRequest.of(0, 5))
+                .getContent()
+                .stream()
+                .map(employeeService::mapToResponse)
+                .toList();
 
         return DashboardResponse.builder()
                 .employeeStats(DashboardResponse.EmployeeStats.builder()
                         .totalEmployees(totalEmployees)
                         .activeEmployees(activeEmployees)
-                        .newHiresThisMonth(0L)
-                        .terminationsThisMonth(0L)
-                        .attritionRate(2.5)
-                        .avgTenureYears(3.2)
+                        .newHiresThisMonth(newHiresThisMonth)
+                        .terminationsThisMonth(terminationsThisMonth)
+                        .attritionRate(attritionRate)
+                        .avgTenureYears(3.2) // TODO: compute from hireDate
                         .build())
                 .attendanceStats(DashboardResponse.AttendanceStats.builder()
                         .presentToday(presentToday)
                         .absentToday(absentToday)
                         .lateToday(lateToday)
-                        .onLeaveToday(pendingLeaves)
-                        .attendanceRate(Math.round(attendanceRate * 10.0) / 10.0)
+                        .onLeaveToday(onLeaveToday)
+                        .attendanceRate(attendanceRate)
                         .build())
                 .payrollStats(DashboardResponse.PayrollStats.builder()
                         .totalPayrollThisMonth(payrollThisMonth)
                         .totalPayrollLastMonth(payrollLastMonth)
-                        .payrollGrowth(0.0)
-                        .pendingPayrolls(0L)
+                        .payrollGrowth(payrollGrowth)
+                        .pendingPayrolls(pendingPayrolls)
                         .build())
                 .leaveStats(DashboardResponse.LeaveStats.builder()
                         .pendingRequests(pendingLeaves)
-                        .approvedThisMonth(0L)
-                        .rejectedThisMonth(0L)
+                        .approvedThisMonth(approvedThisMonth)
+                        .rejectedThisMonth(rejectedThisMonth)
                         .build())
                 .recruitmentStats(DashboardResponse.RecruitmentStats.builder()
                         .openPositions(openPositions)
                         .totalCandidates(totalCandidates)
-                        .interviewsScheduled(0L)
-                        .hiredThisMonth(0L)
+                        .interviewsScheduled(interviewsScheduled)
+                        .hiredThisMonth(hiredThisMonth)
                         .build())
                 .departmentDistribution(deptDistribution)
                 .headcountTrend(headcountTrend)
@@ -95,18 +143,22 @@ public class DashboardService {
                 .build();
     }
 
-    private List<Map<String, Object>> buildDepartmentDistribution() {
-        return employeeRepository.getDepartmentDistribution();
+    // Evict dashboard cache every 5 minutes so data stays fresh
+    @Scheduled(fixedDelay = 300_000)
+    @CacheEvict(value = "dashboard", allEntries = true)
+    public void evictDashboardCache() {
+        log.debug("Dashboard cache evicted");
     }
 
-    private List<Map<String, Object>> buildHeadcountTrend() {
+    private List<Map<String, Object>> buildHeadcountTrend(LocalDate today) {
         List<Map<String, Object>> result = new ArrayList<>();
-        String[] months = {"Jan", "Feb", "Mar", "Apr", "May", "Jun"};
-        int[] counts = {110, 118, 125, 130, 138, 145};
-        for (int i = 0; i < months.length; i++) {
-            Map<String, Object> item = new HashMap<>();
-            item.put("month", months[i]);
-            item.put("count", counts[i]);
+        for (int i = 5; i >= 0; i--) {
+            LocalDate month = today.minusMonths(i);
+            LocalDate end = month.withDayOfMonth(month.lengthOfMonth());
+            long count = employeeRepository.countByHireDateBeforeAndDeletedFalse(end.plusDays(1));
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("month", month.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH));
+            item.put("count", count);
             result.add(item);
         }
         return result;

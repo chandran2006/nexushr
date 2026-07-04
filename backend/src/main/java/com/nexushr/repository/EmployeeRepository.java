@@ -8,7 +8,10 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -23,6 +26,7 @@ public interface EmployeeRepository extends JpaRepository<Employee, UUID> {
 
     boolean existsByEmployeeIdAndDeletedFalse(String employeeId);
 
+    // Full-text search across name, email, ID, title
     @Query("SELECT e FROM Employee e JOIN e.user u WHERE e.deleted = false AND " +
            "(LOWER(u.firstName) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
            "LOWER(u.lastName) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
@@ -43,15 +47,32 @@ public interface EmployeeRepository extends JpaRepository<Employee, UUID> {
     @Query("SELECT e FROM Employee e WHERE e.deleted = false AND e.manager.id = :managerId")
     List<Employee> findDirectReports(@Param("managerId") UUID managerId);
 
+    // Recent hires sorted by hire date descending
+    @Query("SELECT e FROM Employee e WHERE e.deleted = false ORDER BY e.hireDate DESC")
+    Page<Employee> findRecentHires(Pageable pageable);
+
+    // Count queries for dashboard
     long countByDeletedFalse();
 
     long countByStatusAndDeletedFalse(Employee.EmployeeStatus status);
 
     long countByDepartmentIdAndDeletedFalse(UUID departmentId);
 
-    @Query("SELECT e FROM Employee e WHERE e.deleted = false AND e.attritionRiskScore >= :threshold ORDER BY e.attritionRiskScore DESC")
-    List<Employee> findHighAttritionRiskEmployees(@Param("threshold") java.math.BigDecimal threshold);
+    @Query("SELECT COUNT(e) FROM Employee e WHERE e.deleted = false AND e.hireDate BETWEEN :start AND :end")
+    long countByHireDateBetweenAndDeletedFalse(@Param("start") LocalDate start, @Param("end") LocalDate end);
 
-    @Query("SELECT new map(d.name as name, COUNT(e) as value) FROM Employee e JOIN e.department d WHERE e.deleted = false GROUP BY d.name ORDER BY COUNT(e) DESC")
-    List<java.util.Map<String, Object>> getDepartmentDistribution();
+    @Query("SELECT COUNT(e) FROM Employee e WHERE e.deleted = false AND e.terminationDate BETWEEN :start AND :end")
+    long countByTerminationDateBetweenAndDeletedFalse(@Param("start") LocalDate start, @Param("end") LocalDate end);
+
+    @Query("SELECT COUNT(e) FROM Employee e WHERE e.deleted = false AND e.hireDate < :before")
+    long countByHireDateBeforeAndDeletedFalse(@Param("before") LocalDate before);
+
+    // AI attrition
+    @Query("SELECT e FROM Employee e WHERE e.deleted = false AND e.attritionRiskScore >= :threshold ORDER BY e.attritionRiskScore DESC")
+    List<Employee> findHighAttritionRiskEmployees(@Param("threshold") BigDecimal threshold);
+
+    // Department distribution for pie chart
+    @Query("SELECT new map(d.name as name, COUNT(e) as value) FROM Employee e " +
+           "JOIN e.department d WHERE e.deleted = false GROUP BY d.name ORDER BY COUNT(e) DESC")
+    List<Map<String, Object>> getDepartmentDistribution();
 }

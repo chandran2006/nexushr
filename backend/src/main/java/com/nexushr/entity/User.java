@@ -4,13 +4,13 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
-import java.util.HashSet;
-import java.util.Set;
 
 @Entity
 @Table(name = "users", indexes = {
     @Index(name = "idx_users_email", columnList = "email"),
-    @Index(name = "idx_users_employee_id", columnList = "employee_id")
+    @Index(name = "idx_users_employee_id", columnList = "employee_id"),
+    @Index(name = "idx_users_role", columnList = "role"),
+    @Index(name = "idx_users_status", columnList = "status")
 })
 @Getter
 @Setter
@@ -34,7 +34,7 @@ public class User extends BaseEntity {
     @Column(name = "phone_number", length = 20)
     private String phoneNumber;
 
-    @Column(name = "profile_image_url")
+    @Column(name = "profile_image_url", length = 500)
     private String profileImageUrl;
 
     @Enumerated(EnumType.STRING)
@@ -63,10 +63,11 @@ public class User extends BaseEntity {
     @Builder.Default
     private boolean emailVerified = false;
 
-    @Column(name = "refresh_token")
+    // Stored as TEXT to avoid length issues with JWT tokens
+    @Column(name = "refresh_token", columnDefinition = "TEXT")
     private String refreshToken;
 
-    @Column(name = "password_reset_token")
+    @Column(name = "password_reset_token", length = 128)
     private String passwordResetToken;
 
     @Column(name = "password_reset_expires")
@@ -84,7 +85,7 @@ public class User extends BaseEntity {
     }
 
     public enum UserRole {
-        SUPER_ADMIN, HR_ADMIN, HR_MANAGER, EMPLOYEE, FINANCE, EXECUTIVE
+        SUPER_ADMIN, HR_ADMIN, HR_MANAGER, MANAGER, EMPLOYEE, FINANCE, EXECUTIVE, RECRUITER
     }
 
     public enum UserStatus {
