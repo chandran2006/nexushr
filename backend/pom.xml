@@ -22,8 +22,7 @@
         <mapstruct.version>1.5.5.Final</mapstruct.version>
         <openapi.version>2.5.0</openapi.version>
         <maven.compiler.release>17</maven.compiler.release>
-        <maven.compiler.fork>true</maven.compiler.fork>
-        <maven.compiler.executable>C:\Program Files\Java\jdk-17\bin\javac.exe</maven.compiler.executable>
+
     </properties>
 
     <dependencies>
