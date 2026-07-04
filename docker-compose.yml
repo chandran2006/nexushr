@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -36,8 +34,11 @@ services:
       - nexushr-net
 
   backend:
+    # image: tag is required for `docker compose pull` to work on the server.
+    # In local dev, remove the image: line and use `build:` instead.
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-local}/nexushr-backend:latest
     build:
-      context: ./nexushr-backend
+      context: ./backend
       dockerfile: Dockerfile
     container_name: nexushr-backend
     environment:
@@ -46,10 +47,10 @@ services:
       DB_PASSWORD: nexushr123
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      JWT_SECRET: nexushr-super-secret-jwt-key-2024-enterprise-grade-security-key-minimum-256-bits
+      JWT_SECRET: ${JWT_SECRET:-nexushr-super-secret-jwt-key-2024-enterprise-grade-security-key-minimum-256-bits}
       JWT_EXPIRATION: 86400000
       JWT_REFRESH_EXPIRATION: 604800000
-      FRONTEND_URL: http://localhost:5173
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       SPRING_PROFILES_ACTIVE: docker
     ports:
@@ -67,8 +68,9 @@ services:
     restart: unless-stopped
 
   frontend:
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-local}/nexushr-frontend:latest
     build:
-      context: ./nexushr-frontend
+      context: ./frontend
       dockerfile: Dockerfile
     container_name: nexushr-frontend
     ports:

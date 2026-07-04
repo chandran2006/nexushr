@@ -1,10 +1,10 @@
-FROM eclipse-temurin:21-jdk-alpine AS builder
+FROM eclipse-temurin:17-jdk-alpine AS builder
 WORKDIR /app
 COPY pom.xml .
 COPY src ./src
 RUN apk add --no-cache maven && mvn clean package -DskipTests
 
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 RUN addgroup -S nexushr && adduser -S nexushr -G nexushr
 COPY --from=builder /app/target/*.jar app.jar
